@@ -113,11 +113,26 @@ class RedisStreamTransport(TransportBackend):
                         self._msg_ids[(worker_id, task.task_id)] = msg_id_str
                         yield task
                     except Exception:
+                        # Log the error and ACK the malformed message to prevent infinite retry
                         logger.exception(
-                            "Failed to deserialize message %r from %r",
+                            "Failed to deserialize message %r from %r - acknowledging to skip",
                             msg_id,
                             stream,
                         )
+                        # Acknowledge malformed message to prevent redelivery
+                        try:
+                            msg_id_to_ack = (
+                                msg_id if isinstance(msg_id, str) else msg_id.decode()
+                            )
+                            await self._redis.xack(
+                                stream, _CONSUMER_GROUP, msg_id_to_ack
+                            )
+                        except Exception as ack_exc:
+                            logger.warning(
+                                "Failed to ACK malformed message %r: %s",
+                                msg_id,
+                                ack_exc,
+                            )
 
     async def acknowledge(self, worker_id: str, task_id: str) -> None:
         """Acknowledge a task in the Redis Stream via XACK."""
@@ -153,10 +168,30 @@ class RedisStreamTransport(TransportBackend):
 
     async def _ensure_consumer_group(self, stream: str) -> None:
         """Create the consumer group if it doesn't already exist."""
-        with contextlib.suppress(Exception):
+        try:
             await self._redis.xgroup_create(
                 stream, _CONSUMER_GROUP, id="0", mkstream=True
             )
+            logger.debug(
+                "Created consumer group %r for stream %r", _CONSUMER_GROUP, stream
+            )
+        except Exception as exc:
+            # Check if it's a "BUSYGROUP" error (group already exists)
+            error_msg = str(exc)
+            if "BUSYGROUP" in error_msg:
+                logger.debug(
+                    "Consumer group %r already exists for stream %r",
+                    _CONSUMER_GROUP,
+                    stream,
+                )
+            else:
+                # Log unexpected errors but don't crash - stream might be created by first task
+                logger.warning(
+                    "Failed to create consumer group %r for stream %r: %s",
+                    _CONSUMER_GROUP,
+                    stream,
+                    exc,
+                )
 
     @staticmethod
     def _deserialize_task(fields: dict[bytes | str, bytes | str]) -> Task:
