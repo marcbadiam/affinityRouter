@@ -221,15 +221,16 @@ class Router:
         # Add new workers or update weights
         for worker in workers:
             current_weight = self._ring.nodes.get(worker.worker_id)
+            if current_weight == worker.weight:
+                continue
+            self._ring.add_node(worker.worker_id, weight=worker.weight)
             if current_weight is None:
-                self._ring.add_node(worker.worker_id, weight=worker.weight)
                 logger.info(
                     "Added worker %r to ring (weight=%d)",
                     worker.worker_id,
                     worker.weight,
                 )
-            elif current_weight != worker.weight:
-                self._ring.add_node(worker.worker_id, weight=worker.weight)
+            else:
                 logger.info(
                     "Updated worker %r weight: %d -> %d",
                     worker.worker_id,

@@ -82,11 +82,7 @@ class AffinityCache:
     def delete(self, key: str) -> bool:
         """Remove *key* from the cache.  Returns ``True`` if it existed."""
         with self._lock:
-            try:
-                del self._data[key]
-            except KeyError:
-                return False
-            return True
+            return self._data.pop(key, None) is not None
 
     def clear(self) -> None:
         """Remove all entries."""

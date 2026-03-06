@@ -53,7 +53,7 @@ class RedisStateBackend(StateBackend):
 
     def __init__(
         self,
-        redis: Redis,  # type: ignore[type-arg]
+        redis: Redis,
         acquire_ttl: float = 300.0,
         result_ttl: float = 86400.0,
     ) -> None:

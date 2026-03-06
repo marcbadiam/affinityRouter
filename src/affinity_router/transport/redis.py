@@ -7,7 +7,6 @@ delivery with consumer-group acknowledgement.
 
 from __future__ import annotations
 
-import contextlib
 import json
 import logging
 from typing import TYPE_CHECKING
@@ -47,7 +46,7 @@ class RedisStreamTransport(TransportBackend):
         transport = RedisStreamTransport(redis)
     """
 
-    def __init__(self, redis: Redis, block_ms: int = 5000) -> None:  # type: ignore[type-arg]
+    def __init__(self, redis: Redis, block_ms: int = 5000) -> None:
         self._redis = redis
         self._block_ms = block_ms
         # Map (worker_id, task_id) -> stream message_id for acknowledgement
@@ -83,6 +82,9 @@ class RedisStreamTransport(TransportBackend):
         stream = _stream_key(worker_id)
         consumer = worker_id
 
+        def _decode(val: bytes | str) -> str:
+            return val.decode() if isinstance(val, bytes) else val
+
         # Ensure consumer group exists
         await self._ensure_consumer_group(stream)
 
@@ -106,26 +108,21 @@ class RedisStreamTransport(TransportBackend):
                     try:
                         task = self._deserialize_task(fields)
                         # Store msg_id for later acknowledgement
-                        if isinstance(msg_id, str):
-                            msg_id_str = msg_id
-                        else:
-                            msg_id_str = msg_id.decode()
+                        msg_id_str = _decode(msg_id)
                         self._msg_ids[(worker_id, task.task_id)] = msg_id_str
                         yield task
                     except Exception:
-                        # Log the error and ACK the malformed message to prevent infinite retry
+                        # Log error and ACK malformed message to prevent retry loop
                         logger.exception(
-                            "Failed to deserialize message %r from %r - acknowledging to skip",
+                            "Failed to deserialize message %r from %r - "
+                            "acknowledging to skip",
                             msg_id,
                             stream,
                         )
                         # Acknowledge malformed message to prevent redelivery
                         try:
-                            msg_id_to_ack = (
-                                msg_id if isinstance(msg_id, str) else msg_id.decode()
-                            )
                             await self._redis.xack(
-                                stream, _CONSUMER_GROUP, msg_id_to_ack
+                                stream, _CONSUMER_GROUP, _decode(msg_id)
                             )
                         except Exception as ack_exc:
                             logger.warning(
@@ -185,7 +182,7 @@ class RedisStreamTransport(TransportBackend):
                     stream,
                 )
             else:
-                # Log unexpected errors but don't crash - stream might be created by first task
+                # Log unexpected errors but don't crash - stream may exist
                 logger.warning(
                     "Failed to create consumer group %r for stream %r: %s",
                     _CONSUMER_GROUP,
@@ -197,17 +194,14 @@ class RedisStreamTransport(TransportBackend):
     def _deserialize_task(fields: dict[bytes | str, bytes | str]) -> Task:
         """Convert Redis Stream fields back into a Task instance."""
 
-        def _s(val: bytes | str) -> str:
-            return val.decode() if isinstance(val, bytes) else val
-
-        def _get_field(key: str) -> str:
-            bkey = key.encode()
-            return _s(fields[bkey] if bkey in fields else fields[key])
+        def _field(name: str) -> str:
+            raw = fields.get(name) or fields.get(name.encode(), b"")
+            return raw.decode() if isinstance(raw, bytes) else raw
 
         return Task(
-            task_id=_get_field("task_id"),
-            task_name=_get_field("task_name"),
-            routing_key=_get_field("routing_key"),
-            payload=json.loads(_get_field("payload")),
-            created_at=float(_get_field("created_at")),
+            task_id=_field("task_id"),
+            task_name=_field("task_name"),
+            routing_key=_field("routing_key"),
+            payload=json.loads(_field("payload")),
+            created_at=float(_field("created_at")),
         )

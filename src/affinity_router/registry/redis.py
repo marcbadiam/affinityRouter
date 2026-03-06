@@ -48,7 +48,7 @@ class RedisServiceRegistry(ServiceRegistry):
         registry = RedisServiceRegistry(redis)
     """
 
-    def __init__(self, redis: Redis) -> None:  # type: ignore[type-arg]
+    def __init__(self, redis: Redis) -> None:
         self._redis = redis
 
     async def register(self, worker: WorkerInfo) -> None:
@@ -106,7 +106,7 @@ class RedisServiceRegistry(ServiceRegistry):
         workers: list[WorkerInfo] = []
         for wid_raw in worker_ids_raw:
             wid = wid_raw.decode() if isinstance(wid_raw, bytes) else wid_raw
-            info = await self._redis.hgetall(_info_key(wid))
+            info = await self._redis.hgetall(_info_key(wid))  # type: ignore[misc]
             if not info:
                 continue
             workers.append(self._deserialize_worker(wid, info))
@@ -128,20 +128,14 @@ class RedisServiceRegistry(ServiceRegistry):
     ) -> WorkerInfo:
         """Build a WorkerInfo from Redis hash fields."""
 
-        def _s(val: bytes | str) -> str:
-            return val.decode() if isinstance(val, bytes) else val
-
-        # Safely extract fields with fallbacks
-        host = _s(info.get(b"host", info.get("host", b"localhost")))  # type: ignore[arg-type]
-        port = int(_s(info.get(b"port", info.get("port", b"0"))))  # type: ignore[arg-type]
-        weight = int(_s(info.get(b"weight", info.get("weight", b"1"))))  # type: ignore[arg-type]
-        metadata_raw = _s(info.get(b"metadata", info.get("metadata", b"{}")))  # type: ignore[arg-type]
-        metadata: dict[str, str] = json.loads(metadata_raw)
+        def _field(name: str, default: str = "") -> str:
+            raw = info.get(name) or info.get(name.encode()) or default
+            return raw.decode() if isinstance(raw, bytes) else raw
 
         return WorkerInfo(
             worker_id=worker_id,
-            host=host,
-            port=port,
-            weight=weight,
-            metadata=metadata,
+            host=_field("host", "localhost"),
+            port=int(_field("port", "0")),
+            weight=int(_field("weight", "1")),
+            metadata=json.loads(_field("metadata", "{}")),
         )

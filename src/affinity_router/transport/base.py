@@ -49,7 +49,7 @@ class TransportBackend(ABC):
         Yields:
             Task instances in arrival order.
         """
-        yield  # pragma: no cover  — required for async generator type
+        yield  # type: ignore[misc]  # pragma: no cover
 
     @abstractmethod
     async def acknowledge(self, worker_id: str, task_id: str) -> None:

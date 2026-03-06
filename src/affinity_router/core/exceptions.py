@@ -1,5 +1,7 @@
 """AffinityRouter exception hierarchy."""
 
+from __future__ import annotations
+
 
 class AffinityRouterError(Exception):
     """Base exception for all AffinityRouter errors."""
