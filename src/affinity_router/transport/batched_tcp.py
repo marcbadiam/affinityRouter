@@ -80,25 +80,29 @@ class BatchedTcpTransport(TransportBackend):
         """Get or create a StreamWriter for the specified worker."""
         writer = self.writers.get(worker_id)
         if writer is None or writer.is_closing():
+            # Perform blocking resolution and connection without holding the mutex
+            worker_info = self.worker_cache.get(worker_id)
+            if not worker_info or worker_info.port == 0:
+                workers = await self.registry.get_active_workers()
+                for w in workers:
+                    self.worker_cache[w.worker_id] = w
+                worker_info = self.worker_cache.get(worker_id)
+
+            if not worker_info:
+                raise TransportError(
+                    f"Could not resolve host/port for worker {worker_id}"
+                )
+
+            _, new_writer = await asyncio.open_connection(
+                worker_info.host, worker_info.port
+            )
+            
             async with self._lock:
                 writer = self.writers.get(worker_id)
+                # Ensure no other coroutine created it while we were connecting
                 if writer is None or writer.is_closing():
-                    worker_info = self.worker_cache.get(worker_id)
-                    if not worker_info or worker_info.port == 0:
-                        workers = await self.registry.get_active_workers()
-                        for w in workers:
-                            self.worker_cache[w.worker_id] = w
-                        worker_info = self.worker_cache.get(worker_id)
-
-                    if not worker_info:
-                        raise TransportError(
-                            f"Could not resolve host/port for worker {worker_id}"
-                        )
-
-                    _, writer = await asyncio.open_connection(
-                        worker_info.host, worker_info.port
-                    )
-                    self.writers[worker_id] = writer
+                    self.writers[worker_id] = new_writer
+                    writer = new_writer
 
                     # Initialize batching state for this worker
                     if worker_id not in self._batch_queues:
@@ -109,6 +113,8 @@ class BatchedTcpTransport(TransportBackend):
                             self._flush_loop(worker_id),
                             name=f"batch-flush-{worker_id}",
                         )
+                else:
+                    new_writer.close()
 
         return writer
 
@@ -150,7 +156,7 @@ class BatchedTcpTransport(TransportBackend):
                 batch_payload = {"batch": True, "tasks": pending}
                 data = json.dumps(batch_payload).encode("utf-8") + b"\n"
                 writer.write(data)
-                await writer.drain()
+                await asyncio.wait_for(writer.drain(), timeout=2.0)
 
                 # Clear pending batch
                 self._pending_batches[worker_id] = []
@@ -203,7 +209,11 @@ class BatchedTcpTransport(TransportBackend):
                 if not data:
                     break  # Connection closed remotely
 
-                payload = json.loads(data.decode("utf-8").strip())
+                try:
+                    payload = json.loads(data.decode("utf-8").strip())
+                except json.JSONDecodeError as e:
+                    logger.error(f"Malformed JSON payload received: {e} - data: {data[:100]}...")
+                    continue
 
                 # Handle batched messages
                 if payload.get("batch") is True:
@@ -247,13 +257,16 @@ class BatchedTcpTransport(TransportBackend):
             Task instances in arrival order.
         """
         self.server = await asyncio.start_server(
-            self._handle_client, self.host, self.port
+            self._handle_client, self.host, self.port, limit=1024 * 1024 * 10
         )
         logger.info(f"Batched TCP Transport listening on {self.host}:{self.port}")
 
         while True:
-            task = await self.queue.get()
-            yield task
+            try:
+                task = await self.queue.get()
+                yield task
+            except asyncio.CancelledError:
+                break
 
     async def acknowledge(self, worker_id: str, task_id: str) -> None:
         """Acknowledge successful processing of a task.
@@ -288,7 +301,7 @@ class BatchedTcpTransport(TransportBackend):
         for w in self.writers.values():
             w.close()
             with contextlib.suppress(Exception):
-                await w.wait_closed()
+                await asyncio.wait_for(w.wait_closed(), timeout=2.0)
         self.writers.clear()
 
         # Close server
@@ -297,3 +310,10 @@ class BatchedTcpTransport(TransportBackend):
             with contextlib.suppress(Exception):
                 await self.server.wait_closed()
             self.server = None
+
+        # Free any lingering queue gets
+        while not self.queue.empty():
+            try:
+                self.queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
