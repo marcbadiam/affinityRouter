@@ -1,0 +1,44 @@
+direction: right
+
+Client -> Router: 1. Request (affinity_key)
+
+Router: {
+  shape: step
+  style: { fill: "#e0f7fa"; stroke: "#00acc1" }
+  description: "Load Balancer (API)\nResuelve qué Worker toca"
+  
+  "Hash Ring": { shape: cylinder }
+}
+
+"Transport Broker": {
+  style: { fill: "#ffebee"; stroke: "#e53935" }
+  "Topic / Stream W1": { shape: queue }
+  "Topic / Stream W2": { shape: queue }
+  "Topic / Stream W3": { shape: queue }
+}
+
+Router -> "Transport Broker"."Topic / Stream W1": 2. Publicar Tarea (XADD)
+Router -> "Transport Broker"."Topic / Stream W2": 2. Publicar Tarea (XADD)
+Router -> "Transport Broker"."Topic / Stream W3": 2. Publicar Tarea (XADD)
+
+"Worker Cluster": {
+  style: { fill: "#f1f8e9"; stroke: "#7cb342" }
+
+  "Worker 1": { shape: rectangle; "Local Cache": {shape: cylinder} }
+  "Worker 2": { shape: rectangle; "Local Cache": {shape: cylinder} }
+  "Worker 3": { shape: rectangle; "Local Cache": {shape: cylinder} }
+}
+
+"Transport Broker"."Topic / Stream W1" -> "Worker Cluster"."Worker 1": 3. Consumo (Pull/Push)
+"Transport Broker"."Topic / Stream W2" -> "Worker Cluster"."Worker 2": 3. Consumo (Pull/Push)
+"Transport Broker"."Topic / Stream W3" -> "Worker Cluster"."Worker 3": 3. Consumo (Pull/Push)
+
+"Registry and State": {
+  shape: cylinder
+  description: "DB de Coordinación (Redis)\nHeartbeats, Discovery, Exactly-once"
+}
+
+Router -> "Registry and State": Sync Nodos Vivos (Read)
+"Worker Cluster"."Worker 1" -> "Registry and State": Idempotency and Heartbeat (Write)
+"Worker Cluster"."Worker 2" -> "Registry and State": Idempotency and Heartbeat (Write)
+"Worker Cluster"."Worker 3" -> "Registry and State": Idempotency and Heartbeat (Write)

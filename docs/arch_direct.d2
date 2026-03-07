@@ -1,0 +1,45 @@
+direction: right
+
+Client -> Router: 1. Request (affinity_key)
+
+Router: {
+  shape: step
+  style: { fill: "#e0f7fa"; stroke: "#00acc1" }
+  description: "Load Balancer (API)\nResuelve qué Worker toca"
+  
+  "Hash Ring": { shape: cylinder }
+}
+
+"Worker Cluster": {
+  style: { fill: "#f1f8e9"; stroke: "#7cb342" }
+
+  "Worker 1": { 
+    shape: rectangle
+    description: "Server HTTP/gRPC"
+    "Local Cache": {shape: cylinder} 
+  }
+  "Worker 2": { 
+    shape: rectangle
+    description: "Server HTTP/gRPC"
+    "Local Cache": {shape: cylinder} 
+  }
+  "Worker 3": { 
+    shape: rectangle
+    description: "Server HTTP/gRPC"
+    "Local Cache": {shape: cylinder} 
+  }
+}
+
+Router -> "Worker Cluster"."Worker 1": 2. Petición Directa (HTTP/gRPC/TCP)
+Router -> "Worker Cluster"."Worker 2": 2. Petición Directa (HTTP/gRPC/TCP)
+Router -> "Worker Cluster"."Worker 3": 2. Petición Directa (HTTP/gRPC/TCP)
+
+"Registry and State": {
+  shape: cylinder
+  description: "DB de Coordinación (Redis)\nHeartbeats, Discovery, Exactly-once"
+}
+
+Router -> "Registry and State": Sync Nodos Vivos (Read)
+"Worker Cluster"."Worker 1" -> "Registry and State": Idempotency and Heartbeat (Write)
+"Worker Cluster"."Worker 2" -> "Registry and State": Idempotency and Heartbeat (Write)
+"Worker Cluster"."Worker 3" -> "Registry and State": Idempotency and Heartbeat (Write)
