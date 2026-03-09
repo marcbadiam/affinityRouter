@@ -17,8 +17,10 @@ AffinityRouter is a Python library for smart task routing in distributed systems
 ## Installation
 
 ```bash
-pip install affinity-router
+pip install --pre affinity-router
 ```
+
+> **Note:** The `--pre` flag is required to install this alpha pre-release.
 
 ## Quick Start
 
@@ -81,6 +83,20 @@ transport = BatchedTcpTransport(
 | Redis Streams | Medium | Medium | High | Production, distributed |
 | Direct TCP | High | Low | Low | Controlled networks |
 | Batched TCP | Highest | Medium | Low | High-throughput batch jobs |
+
+## ⚠️ Disclaimer
+
+This software is provided **"AS IS"**, without warranty of any kind, express or implied. The authors and contributors shall not be held liable for any damages, data loss, service disruptions, or any other issues arising from the use of this software. Users are solely responsible for evaluating the suitability of this software for their intended use case.
+
+By using this software, you acknowledge that you have read and understood the [MIT License](LICENSE) under which it is distributed.
+
+## 🚧 Alpha Status
+
+> **This is an alpha release (`0.1.0a1`).**
+>
+> This version may contain **incomplete implementations** and **undocumented critical bugs**. The API surface is subject to breaking changes without prior notice.
+>
+> **It is strongly recommended to avoid using this package in real development or production environments.**
 
 ## License
 

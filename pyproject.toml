@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "affinity-router"
-version = "0.1.0"
+version = "0.1.0a1"
 description = "Intelligent task routing with data locality for distributed systems"
 readme = "README.md"
 license = { text = "MIT" }
@@ -43,8 +43,8 @@ dependencies = [
 # nats = ["nats-py>=2.6"]
 
 [project.urls]
-Homepage = "https://github.com/affinityrouter/affinity-router"
-Repository = "https://github.com/affinityrouter/affinity-router"
+Homepage = "https://github.com/marcbadiam/affinityRouter"
+Repository = "https://github.com/marcbadiam/affinityRouter"
 
 [dependency-groups]
 dev = [
